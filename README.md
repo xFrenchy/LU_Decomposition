@@ -1,7 +1,7 @@
 # LU_Decomposition in OpenMP, MPI, & CUDA
 ###### Anthony Dupont, Trystan Kaes, Tobby Lie, Marcus Gallegos
 
-To run the MPI version on heracles:
+##To run the MPI version on heracles:
 
 > mpirun -print-rank-map -n # -ppn # ./ProgramName # 1
 
