@@ -1,6 +1,12 @@
 # LU_Decomposition in OpenMP, MPI, & CUDA
 ###### Anthony Dupont, Trystan Kaes, Tobby Lie, Marcus Gallegos
 
+## To run the Sequential version on heracles:
+
+> g++ -O LU-Decomp_Seq.cpp -o LU-Decomp_Seq
+
+> sbatch lu_decomp_seq_slurm.sh <size of matrix> <print yes = 1, print no = 0>
+
 ## To run the MPI version on heracles:
 
 > mpirun -print-rank-map -n # -ppn # ./ProgramName # 1
