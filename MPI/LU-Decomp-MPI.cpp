@@ -111,37 +111,35 @@ void PrintMatrix(float matrix[][5], int size)
 void LUDecomp(float a[][5], float lower[][5], float upper[][5], int size, int numProcesses, int myProcessID){
 	MPI_Status status;
 	//Need to send each row of A to each worker, therefore I need a local 1d array since they only only receive a row
-	float locala[size*2];	//locala has defaulty the first row + the needed row(s) the worker has to receive
+	float localA[size*2];	//localA has defaulty the first row + the needed row(s) the worker has to receive
 	
-	//Workers will need to find their pivot based off the first row of the matrix, so locala will always have the first row
+	//Workers will need to find their pivot based off the first row of the matrix, so localA will always have the first row
 	for(int i = 0; i < size; ++i){
-		locala[i] = a[0][i];
+		localA[i] = a[0][i];
 	}
 	
 	//Copy data from Matrix A into local, and send each row to different workers
 	if(myProcessID == 0){
 		//This for loop is used to send data to every single process that exists
 		for(int k = numProcesses; k > 0; --k){
-			//copy current row in matrix a into locala for workers to receive the data
+			//copy current row in matrix a into localA for workers to receive the data
 			//printf("Sending this data:\n");
-			//for(int j = 0; j < nRows; ++j){
-			//	int rowIndex = (k*nRows)-j - 1;
-				//printf("Row Index: %d\n", rowIndex);
-				for(int i = 0; i < size; ++i){
-					locala[i+size] = a[k-1][i];	//Make sure that there isn't more processes than rows, k could be out of range
-					//printf("%0.2f ", locala[i]);
-				}
-			//}
+			for(int i = 0; i < size; ++i){
+				localA[i+size] = a[k-1][i];	//Make sure that there isn't more processes than rows, k could be out of range
+				//printf("%0.2f ", localA[i]);
+			}
 			//printf("\n");
+			
 			//don't send data to master, master knows all, it would be insulting
-			MPI_Send(&locala[0],size*2,MPI_FLOAT,k-1,0,MPI_COMM_WORLD);	//send row of a
+			MPI_Send(&localA[0],size*2,MPI_FLOAT,k-1,0,MPI_COMM_WORLD);	//send row(s) of a
 		}
 	}
 	else{
-		MPI_Recv(&locala[0],size*2,MPI_FLOAT,0,0,MPI_COMM_WORLD,&status);
+		MPI_Recv(&localA[0],size*2,MPI_FLOAT,0,0,MPI_COMM_WORLD,&status);
+		//DEBUG PURPOSE ONLY
 		/*printf("Hey there! I received: \n");
 		for(int i = 0; i < size*2; ++i){
-			printf("%0.2f ", locala[i]);
+			printf("%0.2f ", localA[i]);
 		}
 		printf("\n");*/
 	}
@@ -149,24 +147,27 @@ void LUDecomp(float a[][5], float lower[][5], float upper[][5], int size, int nu
 	
 	//Workers have their rows, now perform LU Decomp on that specific row. I need a pivot
 	if(myProcessID > 0){
-		float pivots[size];
+		float pivots[size];	//depending on which row we perform LU Decomposition on, there could be many pivots, they will all be stored here
+		
 		//the first row will have 1 entry, 2nd row will have 2, 3rd row will have 3, etc. So I will use their index to know how many entries they have
 		for(int i = 0; i < myProcessID; ++i){
-			pivots[i] = (locala[size+i]/locala[0+i]);	//locala[size] is the beginning of the first row sent since locala[0-size] is the first row of the matrix
-			//This pivot will go into Lower, apply pivot on row (first element should go to 0), final updated row will go in Upper
+			pivots[i] = (localA[size+i]/localA[0+i]);	//localA[size] is the beginning of the first row sent from the data partition 
+														//since localA[0-size] is the first row of the matrix A
+			//This pivot will go into Lower, apply pivot on row (first element should go compute to 0), final updated row will go in Upper
 			for(int j = i; j < size; ++j){
-				locala[size+j] = (locala[0+j]*pivots[i]) - locala[size+j];
+				localA[size+j] = (localA[0+j]*pivots[i]) - localA[size+j];	//applying pivot to the row
 			}
 		}
+		
 		//set up the array to send back the pivots for L, and the final updated row for U
 		for(int i = 0; i < myProcessID; ++i){
-			locala[i] = pivots[i];	//overriding the very fist row of Matrix A, don't need that data anymore
+			localA[i] = pivots[i];	//overriding the beginning data of localA which contains the very fist row of Matrix A, don't need that data anymore
 		}
 		
 		//DEBUG PURPOSE ONLY
 		/*printf("My pivots and final row: \n");
 		for(int i = 0; i < size*2; ++i){
-			printf("%0.2f ", locala[i]);
+			printf("%0.2f ", localA[i]);
 			if(i == size)
 				printf(" : ");
 		}
@@ -180,18 +181,18 @@ void LUDecomp(float a[][5], float lower[][5], float upper[][5], int size, int nu
 		}
 		//Master will receive data from workers to create the rest of upper and lower
 		for(int i = 1; i < numProcesses; ++i){
-			MPI_Recv(&locala[0],size*2,MPI_FLOAT,i,0,MPI_COMM_WORLD,&status);
+			MPI_Recv(&localA[0],size*2,MPI_FLOAT,i,0,MPI_COMM_WORLD,&status);
 			for(int j = 0; j < i; ++j){
-				lower[i][j] = locala[j];	//the beginning of locala should be the pivots, everything past that is the row
+				lower[i][j] = localA[j];	//the beginning of localA should be the pivots, everything past that is the row
 			}
 			for(int j = 0; j < size; ++j){
-				upper[i][j] = locala[j+size];
+				upper[i][j] = localA[j+size];
 			}
 		}
 	}
 	else{
 		//Workers send data to master
-		MPI_Send(&locala[0],size*2,MPI_FLOAT,0,0,MPI_COMM_WORLD);
+		MPI_Send(&localA[0],size*2,MPI_FLOAT,0,0,MPI_COMM_WORLD);
 	}
 }
 
@@ -256,8 +257,8 @@ int main(int argc, char *argv[]){
 		printf("\nUpper:\n");
 		PrintMatrix(upper,n);
 
-		//All process delete matrix
-		DeleteMatrix(a,n);	*/
+		//All process delete matrix, ahhaa, yeah, maybe when I get that to work one day
+		//DeleteMatrix(a,n);
 	}
 
 	MPI_Finalize();
