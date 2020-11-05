@@ -17,6 +17,8 @@
 #include <time.h>
 #include <mpi.h>    
 using namespace std;
+
+
 //-----------------------------------------------------------------------
 //   Get user input of matrix dimension and printing option
 //-----------------------------------------------------------------------
@@ -59,6 +61,8 @@ bool GetUserInput(int argc, char *argv[],int& n,int& isPrint,int numProcesses, i
 	}
 	return isOK;
 }
+
+
 //------------------------------------------------------------------
 //delete matrix matrix a[n x n]
 //------------------------------------------------------------------
@@ -66,111 +70,6 @@ void DeleteMatrix(float **a,int n)
 {
 	delete[] a[0];
 	delete[] a; 
-}
-
-
-bool MatrixMultiplication(float **a, float *b, float *c, int n,int numProcesses, int myProcessID){
-	c = new float[n];
-	int nRows = n/numProcesses;		//we might have less processes than rows
-	float *localb = new float[n*nRows];	//this is going to be a row
-	float *localVectorb = new float[n];	//this is going to be the vector b
-	int rank = 1;	//used to create a critical section without the master
-	for(int i = 0; i < n; ++i){
-		c[i] = 0.0;
-	}
-	MPI_Status status;
-	
-	printf("number of processes: %d\n", numProcesses);
-	printf("myProcessID: %d\n", myProcessID);
-	if(myProcessID == 0){
-		//This for loop is used to send data to every single process that exists
-		for(int k = numProcesses; k > 0; --k){
-			//copy current row in matrix a into localb for workers to receive the data
-			//printf("Sending this data:\n");
-			for(int j = 0; j < nRows; ++j){
-				int rowIndex = (k*nRows)-j - 1;
-				//printf("Row Index: %d\n", rowIndex);
-				for(int i = 0; i < n; ++i){
-					localb[i+(n*j)] = a[rowIndex][i];	//Make sure that there isn't more processes than rows, k could be out of range
-					//printf("%0.2f ", localb[i]);
-				}
-			}
-			//printf("\n");
-			//don't send data to master, master knows all, it would be insulting
-			if(k != 0){
-				MPI_Send(&localb[0],n*nRows,MPI_FLOAT,k-1,0,MPI_COMM_WORLD);	//send row of a
-			}
-		}
-	}
-	else{
-		MPI_Recv(&localb[0],n*nRows,MPI_FLOAT,0,0,MPI_COMM_WORLD,&status);
-		// printf("Hey there! I received: \n");
-		// for(int i = 0; i < n*nRows; ++i){
-			// printf("%0.2f ", localb[i]);
-		// }
-		// printf("\n");
-	}
-	printf("\n");
-	
-	if(myProcessID == 0){
-		for(int k = numProcesses - 1; k > 0; --k){
-			for(int i = 0; i < n; ++i)
-				localVectorb[i] = b[i];	//copy b to a local vector to distribute to workers
-			MPI_Send(&localVectorb[0],n,MPI_FLOAT,k,0,MPI_COMM_WORLD);//send vector b
-		}
-	}
-	else{
-		MPI_Recv(&localVectorb[0],n,MPI_FLOAT,0,0,MPI_COMM_WORLD,&status);
-		// printf("Do I know b now???\n");
-		// for(int i = 0; i < n; ++i){
-			// printf("%0.2f ", localVectorb[i]);
-		// }
-	}
-	
-	//WOOO WE'VE SENT AND RECEIVED DATA CONGRATS now do the multiplication part like you're supposed to
-	
-	if(myProcessID > 0){
-		for(int j = 0; j < nRows; ++j){
-			localb[j] = localb[j*n] * localVectorb[0];
-			for(int i = 1; i < n; ++i){
-				localb[j] += localb[i+(j*n)] * localVectorb[i];
-			}
-		}
-		//printf("I am row: %d\n", myProcessID);
-		//printf("Row multiplication result: %0.2f \n", localb[0]);
-	}
-	else{
-		//master gonna do some work too
-		for(int j = 0; j < nRows; ++j){
-			c[j] = a[j][0] * b[0];
-			for(int i = 1; i < n; ++i){
-				c[j] += a[j][i] * b[i];
-			}
-		}
-	}
-	//The result of the row multiplcation is stored in localb[0]. I can send localb[0] back and look specifically there
-	
-	if(myProcessID == 0){
-		for (int k = 1 ; k < numProcesses ; k++) 
-		{
-			//receive data from worker process
-			MPI_Recv(&localb[0],n,MPI_FLOAT,k,0,MPI_COMM_WORLD,&status);
-			for(int j = 0; j < nRows; ++j){
-				c[(k*nRows)+j] = localb[0];
-			}
-		}
-	}
-	else{
-		MPI_Send(&localb[0],n,MPI_FLOAT,0,0,MPI_COMM_WORLD);
-	}
-	
-	if(myProcessID == 0){
-		printf("Output C Matrix: \n");
-		for(int i = 0; i < n; ++i){
-			printf("%0.2f\n", c[i]);
-		}
-	}
-	return true;
 }
 
 
@@ -300,15 +199,15 @@ void LUDecomp(float a[][5], float lower[][5], float upper[][5], int size, int nu
 //------------------------------------------------------------------
 // Main Program
 //------------------------------------------------------------------
-int main(int argc, char *argv[])
-{
-	//srand(time(NULL));
+int main(int argc, char *argv[]){
+	srand(time(NULL));	//set the seed
+	
+	//Matrices
 	float a[5][5];
 	float lower[5][5];
 	float upper[5][5];
 	
 	int	n,isPrintMatrix,numProcesses,myProcessID;
-	bool missing;
 	double runtime;
 
 	MPI_Init(&argc, &argv);
@@ -344,8 +243,8 @@ int main(int argc, char *argv[])
 	}
 
 	//Compute the LU Decomposition
-	//missing = MatrixMultiplication(a,b,c,n, numProcesses, myProcessID);
 	LUDecomp(a, lower, upper, n, numProcesses, myProcessID);
+	
 	//Master process gets end time and print results
 	if (myProcessID == 0)
 	{
@@ -356,22 +255,6 @@ int main(int argc, char *argv[])
 		PrintMatrix(lower,n);
 		printf("\nUpper:\n");
 		PrintMatrix(upper,n);
-
-		/*if (missing == true)
-		{
-			//Print result matrix
-			if (isPrintMatrix==1)
-			{
-				printf("Output matrix:\n");
-				//PrintMatrix(a,n); 
-				//printMatrixB(c, n);	//this is actually printing c hehe horrible function title
-			}
-			printf("Gaussian Elimination runs in %.2f seconds \n", runtime);
- 		}
-		else
-		{
-			cout<< "The matrix is singular" << endl;
-		}
 
 		//All process delete matrix
 		DeleteMatrix(a,n);	*/
