@@ -15,6 +15,6 @@ Replace # with a number to represent the amount of processes, tasks per node, an
 
 ## To run the OpenMP version of heracles:
 
-> ./ProgramName # # 1
+> g++ -O -fopenmp LU-Decomp-OpenMP.cpp -o LU-Decomp-OpenMP
 
-Replace # with a number to represent the matrix size and number of threads 
+> sbatch lu_decomp_omp_slurm.sh <size of matrix> <number of threads to run program with> <print yes = 1, print no = 0>
