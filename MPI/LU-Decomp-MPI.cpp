@@ -114,7 +114,7 @@ void PrintMatrix(float **matrix, int size)
 {
 	for (int i = 0 ; i < size ; i++){
 		for (int j = 0 ; j < size ; j++){
-			printf("%.2f\t", matrix[i][j]);
+			printf("%.2f\t", matrix[j][i]);
 		}
 		printf("\n");
 	}
@@ -258,24 +258,89 @@ void LUDecomp(float **a, float **lower, float **upper, int size, int numProcesse
 	 */
 	MPI_Status status;
 	int rowSize = size/numProcesses;	//amount of rows that a worker will work on. Example if Matrix size if 8 and we have 4 processes, each worker will have 2 rows
+	int master, lk, indmax;
+	float pivot, max, temp;
 	float *tmp = new float[size];
 	float **b = new float*[rowSize]; //create local matrix
 	b[0] = new float[size*rowSize];
 	for (int j = 1; j < rowSize; j++)
         b[j] = b[j-1] + size;
-	
+	float **c = new float*[rowSize]; //create local matrix
+	c[0] = new float[size*rowSize];
+	for (int j = 1; j < rowSize; j++)
+        c[j] = c[j-1] + size;
+	//cout << "fuck off world\n";
 	MPI_Scatter(a[0],size*rowSize,MPI_FLOAT,b[0],size*rowSize,MPI_FLOAT,0,MPI_COMM_WORLD);
-	
-	if(myProcessID == 1){
-		for(int i = 0; i < rowSize; ++i){
-			for(int j = 0; j < size; ++j){
-				cout << b[j][i] << " ";
+	MPI_Scatter(lower[0],size*rowSize,MPI_FLOAT,c[0],size*rowSize,MPI_FLOAT,0,MPI_COMM_WORLD);
+	//cout << "hi\n";
+	for (int k = 0 ; k < size ; ++k)
+	{
+		max = 0.0;
+		indmax = k;
+		//printf("process %d has max %f\n",myProcessID, max );
+
+		//ID of master process
+		master = k/rowSize;
+		
+		//local k
+		lk = k%rowSize;
+
+		//Only master process find the pivot row
+		//Then broadcast it to all other processes
+
+		if (myProcessID == master)
+		{	
+			//Find the pivot row
+			for (int i = k ; i < size ; i++) 
+			{	
+				temp = abs(b[lk][i]);     
+				if (temp > max) 
+				{
+				  max = temp;
+				  indmax = i;
+				}
 			}
-			cout << endl;
+		}
+
+		MPI_Bcast(&max,1,MPI_FLOAT,master,MPI_COMM_WORLD);
+		MPI_Bcast(&indmax,1,MPI_INT,master,MPI_COMM_WORLD);
+
+
+		//If matrix is singular set the flag & quit
+		if (max == 0) return;
+
+		//Master 
+		if (myProcessID == master)
+		{
+			pivot = -1.0/b[lk][k];
+			//c[lk][k] = pivot;
+			//cout << pivot << endl;
+			for (int i = k+1 ; i < size ; i++){ 
+				tmp[i]= pivot*b[lk][i];
+				c[lk][i] = -1*(pivot*b[lk][i]);
+				//cout << tmp[i] << " ";
+			}
+		}
+
+		MPI_Bcast(tmp + k + 1 ,size - k - 1,MPI_FLOAT,master,MPI_COMM_WORLD);
+
+		//Perform row reductions
+		if (myProcessID >= master)
+		{
+            for (int j = ((myProcessID > master)?0:lk) ; j < rowSize; j++)
+			{
+				for (int i = k+1; i < size; i++)
+				{
+					b[j][i] = b[j][i] + tmp[i]*b[j][k];
+				}
+			}
 		}
 	}
 	
+	MPI_Gather(b[0],size*rowSize,MPI_FLOAT,a[0],size*rowSize,MPI_FLOAT,0,MPI_COMM_WORLD);
+	MPI_Gather(c[0],size*rowSize,MPI_FLOAT,lower[0],size*rowSize,MPI_FLOAT,0,MPI_COMM_WORLD);
 }
+
 
 //------------------------------------------------------------------
 // Main Program
@@ -305,7 +370,6 @@ int main(int argc, char *argv[]){
 	if (myProcessID == 0) 
 	{	
 		//Initialize the matrices
-		printf("%d\n", n);
 		InitializeMatrices(a, lower, upper, n);
 
 		printf("A:\n");
@@ -331,7 +395,7 @@ int main(int argc, char *argv[]){
 		printf("\nLower:\n");
 		PrintMatrix(lower,n);
 		printf("\nUpper:\n");
-		PrintMatrix(upper,n);
+		PrintMatrix(a,n);
 
 		//All process delete matrix, ahhaa, yeah, maybe when I get that to work one day
 		//DeleteMatrix(a,n);
