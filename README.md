@@ -7,7 +7,7 @@
 
 > sbatch lu_decomp_seq_slurm.sh (size of matrix) (print yes = 1, print no = 0)
 
-# To run the MPI version on heracles:
+## To run the MPI version on heracles:
 
 > mpirun -print-rank-map -n # -ppn # ./ProgramName # 1
 
