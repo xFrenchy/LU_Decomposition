@@ -106,6 +106,29 @@ void InitializeMatrices(float **&a, float **&lower, float **&upper, int size){
 	}
 }
 
+//------------------------------------------------------------------------------------------------
+//Fills matrix A with random values
+//------------------------------------------------------------------------------------------------
+void InitializeMatrix(float **&a, int size){
+	a = new float*[size];
+	a[0] = new float[size*size];
+	for (int i = 1; i < size; i++)	
+		a[i] = a[i-1] + size;
+}
+
+
+//------------------------------------------------------------------------------------------------
+//Fills vector with random values
+//------------------------------------------------------------------------------------------------
+float* InitializeVector(float *vector, int size){
+	vector = new float[size];
+	for(int i = 0; i < size; ++i){
+		vector[i] = float(i+1)/size;
+		//printf("%.2f\t", b[i]);
+	}
+	return vector;
+}
+
 
 //------------------------------------------------------------------
 //Print the matrix that was passed to it
@@ -117,6 +140,28 @@ void PrintMatrix(float **matrix, int size)
 			printf("%.2f\t", matrix[j][i]);
 		}
 		printf("\n");
+	}
+}
+
+
+void PrintVector(float *vector, int size){
+	for(int i = 0; i < size; ++i){
+			printf("%0.2f, ", vector[i]);
+	}
+}
+
+
+//Assumes a is column major, stores row major in b
+void ColumnMajorToRowMajor(float **&a, float **&b, int size){
+	b = new float*[size];
+	b[0] = new float[size*size];
+	for (int i = 1; i < size; i++)	
+		b[i] = b[i-1] + size;
+	
+	for(int i = 0; i < size; ++i){
+		for(int j = 0; j < size; ++j){
+			b[i][j] = a[j][i];
+		}
 	}
 }
 
@@ -269,7 +314,6 @@ void LUDecomp(float **a, float **lower, float **upper, int size, int numProcesse
 	c[0] = new float[size*rowSize];
 	for (int j = 1; j < rowSize; j++)
         c[j] = c[j-1] + size;
-	//cout << "fuck off world\n";
 	MPI_Scatter(a[0],size*rowSize,MPI_FLOAT,b[0],size*rowSize,MPI_FLOAT,0,MPI_COMM_WORLD);
 	MPI_Scatter(lower[0],size*rowSize,MPI_FLOAT,c[0],size*rowSize,MPI_FLOAT,0,MPI_COMM_WORLD);
 	//cout << "hi\n";
@@ -342,6 +386,67 @@ void LUDecomp(float **a, float **lower, float **upper, int size, int numProcesse
 }
 
 
+void forwardSubstitution(float **lowerRow, float *vector, int size, int numProcesses, int myProcessID){
+	//So now that we have the LU matrix, it's time to do something with it I guess
+	//We'll work from the top to bottom for forward. Solve row 1, broadcast the value to all other for them to plug it in
+	//I think master should always be solving the current row and broadcasting to others
+	MPI_Status status;
+	int rowSize = size/numProcesses;	//amount of rows that a worker will work on. Example if Matrix size if 8 and we have 4 processes, each worker will have 2 rows
+	int master;
+	float bcastVal = 0.00;
+	float *tmp = new float[size];	//will broadcast the vector in here for workers
+	float *solution = new float[size];
+	if(myProcessID == 0){
+		for(int i = 0; i < size; ++i){
+			tmp[i] = vector[i];
+		}
+		//DEBUGGING
+		// for(int i = 0; i < size; ++i)
+			// for(int j = 0; j < size; ++j)
+				// printf("%0.2f, ", lowerRow[i][j]);
+		//printf("%0.2f\n",lowerRow[0]);
+	}
+	float **b = new float*[rowSize]; //create local matrix
+	b[0] = new float[size*rowSize];
+	for (int j = 1; j < rowSize; j++){
+		b[j] = b[j-1] + size;
+	}
+	MPI_Bcast(tmp,size,MPI_FLOAT,0,MPI_COMM_WORLD);
+	//printf("Size*rowSize: %d\n", size*rowSize);
+	//printf("%0.2f\n", b[0]);
+	//!!!!!!!!!!!!!!!!!BROKEN currently all processes die after the scatter. They didn't die when my lower was column major. So somehow turning it into row major killed it
+	MPI_Scatter(lowerRow[0],size*rowSize,MPI_FLOAT,b[0],size*rowSize,MPI_FLOAT,0,MPI_COMM_WORLD);
+	printf("Hey%d\n", myProcessID);
+	for(int i = 0; i < size; ++i){
+		//Iterate over the length of a row chunk
+		/*master = i;
+		//Solve one step of each row in a parallel fashion 'snap' before iterating over to the index
+		if(myProcessID == master){
+			//This row is solvable, solve it, broadcast it
+			bcastVal = (tmp[i]/b[0][i]);
+			solution[i] = bcastVal;
+			printf("x%d: %0.2f", i, bcastVal);
+		}
+		//BEEEEEEEEEEEEEEEEP BEEEEEEEEEEEEEEEEEP BEEEEEEEEEEEEEEEP WE INTERUPT THIS PROGRAM BECAUSE SOME X WAS SOLVED
+		printf("Hello there!%d\n", myProcessID);
+		MPI_Bcast(&bcastVal, 1, MPI_FLOAT, master, MPI_COMM_WORLD);
+		if(myProcessID > master){
+			printf("General Kenobi\n");
+			tmp[myProcessID] -= b[0][i]*bcastVal;
+		}*/
+		//DEBUGGING PRINT
+		if(myProcessID == 1){
+			for(int j = 0; j < rowSize; ++j){
+				for(int k = 0; k < size; ++k){
+					printf("%0.2f, ", b[j][k]);
+				}
+			}
+			printf("End\n");
+		}
+	}
+	MPI_Gather(b[0],size*rowSize,MPI_FLOAT,lowerRow[0],size*rowSize,MPI_FLOAT,0,MPI_COMM_WORLD);
+}
+
 //------------------------------------------------------------------
 // Main Program
 //------------------------------------------------------------------
@@ -352,6 +457,8 @@ int main(int argc, char *argv[]){
 	float **a;
 	float **lower;
 	float **upper;
+	float *vector;
+	float **lowerRow;
 	
 	int	n,isPrintMatrix,numProcesses,myProcessID;
 	double runtime;
@@ -371,13 +478,13 @@ int main(int argc, char *argv[]){
 	{	
 		//Initialize the matrices
 		InitializeMatrices(a, lower, upper, n);
-
+		vector = InitializeVector(vector, n);
+		
 		printf("A:\n");
 		PrintMatrix(a,n); 
-		// printf("\nLower:\n");
-		// PrintMatrix(lower,n);
-		// printf("\nUpper:\n");
-		// PrintMatrix(upper,n);
+		printf("\nSolution vector: \n");
+		PrintVector(vector, n);
+		
 
 		//Get start time
 		runtime = MPI_Wtime();
@@ -385,7 +492,19 @@ int main(int argc, char *argv[]){
 	
 	//Compute the LU Decomposition
 	LUDecomp(a, lower, upper, n, numProcesses, myProcessID);
+
 	
+	if (myProcessID == 0){
+		ColumnMajorToRowMajor(lower, lowerRow, n);
+		//MPI_Bcast(lowerRow, n*n, MPI_FLOAT, 0, MPI_COMM_WORLD);
+		// printf("\nLower:\n");
+		// PrintMatrix(lower,n);
+		// printf("\nLowerRow:\n");
+		// PrintMatrix(lowerRow,n);
+	}
+	
+	forwardSubstitution(lowerRow, vector, n, numProcesses, myProcessID);
+	//cout << "Hyyiiaaa?" << endl;
 	//Master process gets end time and print results
 	if (myProcessID == 0)
 	{
@@ -398,7 +517,10 @@ int main(int argc, char *argv[]){
 		PrintMatrix(a,n);
 
 		//All process delete matrix, ahhaa, yeah, maybe when I get that to work one day
-		//DeleteMatrix(a,n);
+		DeleteMatrix(a,n);
+		DeleteMatrix(lower, n);
+		DeleteMatrix(upper, n);
+		DeleteMatrix(lowerRow, n);
 	}
 
 	MPI_Finalize();
