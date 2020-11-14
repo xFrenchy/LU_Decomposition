@@ -90,6 +90,48 @@ void InitializeMatrixZeros(float** &a,int n)
         }
     }
 }
+
+//-----------------------------------------------------------------------
+//Initialize the value of matrix x[n x n]
+//-----------------------------------------------------------------------
+float* InitializeVector(int n, float value)
+{
+
+    // allocate square 2d matrix
+    float *x = new float[n];
+    
+    #pragma omp parallel for schedule(static)
+    for (int j = 0 ; j < n ; j++)
+    {
+        if (value == 1)  // generate input matrices (a and b)
+            x[j] = (float)((rand()%10 + 1)/(float)2);
+        else
+            x[j] = 0;  // initializing resulting matrix
+    }
+    
+
+    return x ;
+}
+
+//-----------------------------------------------------------------------
+//Initialize the value of matrix x[n x n]
+//-----------------------------------------------------------------------
+float* DeleteVector(float* x, int n)
+{
+    delete[] x;
+}
+//-----------------------------------------------------------------------
+//Initialize the value of matrix x[n x n]
+//-----------------------------------------------------------------------
+float* PrintVector(float* x, int n)
+{
+    for (int j = 0 ; j < n ; j++)
+    {
+        cout << setiosflags(ios::fixed) << setprecision(2) << x[j] << " ";
+    }
+    cout << endl ;
+}
+
 //------------------------------------------------------------------
 //Delete matrix matrix a[n x n]
 //------------------------------------------------------------------
@@ -146,6 +188,67 @@ void LUdecomposition(float** a, float** &l, int n)
         }
     }
 }
+
+//------------------------------------------------------------------
+//Do Forward Substitution Decomp
+//------------------------------------------------------------------
+float* forward_substitution(float** l, float* y, float* b, int n)
+{
+    int i, j;
+    
+    #pragma omp parallel shared(b, y) private(i)
+    {
+        #pragma omp for schedule(static)
+        for (i = 0; i < n; i++)
+        {
+            y[i] = b[i];
+        }
+    }
+    
+    for (i = 1; i < n; i++)
+    {
+        #pragma omp parallel shared(l, y) private(j)
+        {
+            #pragma omp for schedule(static)
+            for (j = i; j < n; j++)
+            {
+                y[j] = y[j] - l[j][i-1]*y[i-1];
+            }
+        }
+    }
+    
+    return y;
+}
+
+//------------------------------------------------------------------
+//Do Backward Substitution Decomp
+//------------------------------------------------------------------
+float* backward_substitution(float** u, float* x, float* y, int n)
+{
+    int j;
+    
+    x[n - 1] = y[n - 1] / u[n - 1][n - 1]; // get very last element
+    
+    float temp = 0;
+    
+    for (int i = n-2; i >= 0; i--)
+    {
+        temp = y[i];
+        #pragma omp parallel shared(u, x) private(j)
+        {
+            #pragma omp for schedule (static)
+            for (int j = n-1; j > i; j--)
+            {
+                temp = temp - (u[i][j] * x[j]);
+            }
+        }
+        
+        x[i] = temp/u[i][i];
+    }
+    
+    return x;
+}
+
 //------------------------------------------------------------------
 // Main Program
 //------------------------------------------------------------------
@@ -167,17 +270,28 @@ int main(int argc, char *argv[])
     //Initialize the value of matrix a, l
     InitializeMatrix(a, n);
     InitializeMatrixZeros(l, n);
+    
+    float *x = InitializeVector(n, 0.0);
+    float *y = InitializeVector(n, 0.0);
+    float *b = InitializeVector(n, 1.0);
 
     //Print the input matrices
     if (isPrintMatrix)
     {
         cout<< "Matrix A:" << endl;
         PrintMatrix(a,n);
+        
+        cout<< "Vector b:" << endl;
+        PrintVector(b,n);
     }
 
     runtime = omp_get_wtime();
 
     LUdecomposition(a,l,n);
+    
+    y = forward_substitution(l, y, b, n);
+    
+    x = backward_substitution(a, x, y, n); // here we use a as the upper
     
     runtime = omp_get_wtime() - runtime;
 
@@ -192,6 +306,12 @@ int main(int argc, char *argv[])
         // This is equivalent to the upper matrix in LU decomp
         cout<< "U matrix:" << endl;
         PrintMatrix(a,n);
+        
+        cout<< "y vector:" << endl;
+        PrintVector(y, n);
+        
+        cout<< "x vector:" << endl;
+        PrintVector(x, n);
     }
     cout<< "Program runs in " << setiosflags(ios::fixed) << setprecision(8) << runtime << " seconds\n";
     
