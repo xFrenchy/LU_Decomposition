@@ -225,25 +225,53 @@ float* forward_substitution(float** l, float* y, float* b, int n)
 //------------------------------------------------------------------
 float* backward_substitution(float** u, float* x, float* y, int n)
 {
-    int j;
+    int i, j, k;
     
     x[n - 1] = y[n - 1] / u[n - 1][n - 1]; // get very last element
     
-    float temp = 0;
+    // populate every other element in same column with product
+    float **temp_vec = new float*[n];
     
-    for (int i = n-2; i >= 0; i--)
+    for (i = 0; i < n; i++)
+        temp_vec[i] = new float[n];
+    
+    #pragma omp parallel shared(temp_vec, u) private(i, j)
     {
-        temp = y[i];
-        #pragma omp parallel shared(u, x) private(j)
+        #pragma omp for schedule(static)
+        for (i = 0; i < n; i++)
         {
-            #pragma omp for schedule (static)
-            for (int j = n-1; j > i; j--)
+            for (j = 0; j < n; j++)
             {
-                temp = temp - (u[i][j] * x[j]);
+                temp_vec[i][j] = u[i][j];
             }
         }
+    }
+    
+    // traverse columns
+    for(i = n-1; i > 0; i--)
+    {
+        // traverse rows
+        #pragma omp parallel shared(temp_vec, x) private(j, k)
+        {
+            #pragma omp for schedule(static)
+            for(j = i - 1; j >= 0; j--)
+            {
+                temp_vec[j][i] = temp_vec[j][i] * x[i];
+            }
         
-        x[i] = temp/u[i][i];
+            #pragma omp single
+            {
+                x[i - 1] = y[i - 1];
+            }
+            
+            
+            #pragma omp for schedule(static)
+            for (int k = i; k < n; k++)
+            {
+                x[i - 1] -= temp_vec[i-1][k];
+            }
+        }
+        x[i - 1] = x[i - 1] / temp_vec[i - 1][i - 1];
     }
     
     return x;
