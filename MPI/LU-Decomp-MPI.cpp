@@ -478,7 +478,7 @@ void forwardSubstitution(float **lower, float *vector, int size, int numProcesse
 	if(myProcessID == 0){
 		for(int j = 0; j < rowSize; ++j){
 			vector[j] = solution[j];
-			printf("%0.2f, ", vector[j]);
+			//printf("%0.2f, ", vector[j]);
 		}
 		for (int k = 1 ; k < numProcesses ; k++) 
 		{
@@ -486,7 +486,7 @@ void forwardSubstitution(float **lower, float *vector, int size, int numProcesse
 			MPI_Recv(tmp,rowSize,MPI_FLOAT,k,0,MPI_COMM_WORLD,&status);
 			for(int m = 0; m < rowSize; ++m){
 				vector[(k*rowSize)+m] = tmp[m];
-				printf("%0.2f, ", vector[(k*rowSize)+m]);
+				//printf("%0.2f, ", vector[(k*rowSize)+m]);
 			}
 		}
 	}
@@ -617,11 +617,12 @@ int main(int argc, char *argv[]){
 		//Initialize the matrices
 		InitializeMatrices(a, lower, upper, n);
 		vector = InitializeVector(vector, n);
-		
-		printf("A:\n");
-		PrintMatrix(a,n); 
-		printf("\nSolution vector: \n");
-		PrintVector(vector, n);
+		if(n < 20){
+			printf("A:\n");
+			PrintMatrix(a,n); 
+			printf("\nSolution vector: \n");
+			PrintVector(vector, n);
+		}
 		
 
 		//Get start time
@@ -657,12 +658,14 @@ int main(int argc, char *argv[]){
 	if (myProcessID == 0)
 	{
 		runtime = MPI_Wtime() - runtime;
-		
-		printf("\nResults:\n");
-		printf("\nLower:\n");
-		PrintMatrix(lower,n);
-		printf("\nUpper:\n");
-		PrintMatrix(a,n);
+		if(n < 20){
+			printf("\nResults:\n");
+			printf("\nLower:\n");
+			PrintMatrix(lower,n);
+			printf("\nUpper:\n");
+			PrintMatrix(a,n);
+		}
+		printf("Runtime: %0.2f", runtime);
 
 		//All process delete matrix, ahhaa, yeah, maybe when I get that to work one day
 		DeleteMatrix(a,n);
