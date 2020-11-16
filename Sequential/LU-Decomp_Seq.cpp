@@ -1,6 +1,9 @@
 //-----------------------------------------------------------------------
 // LU Decomp - Sequential
 //-----------------------------------------------------------------------
+// Programming by Tobby Lie, Anthony Dupont, Trystan Kaes, Marcus Gallegos
+// Update in 11/16/2020
+//-----------------------------------------------------------------------
 #include <iostream>
 #include <iomanip>
 #include <cmath>
@@ -245,8 +248,6 @@ int main(int argc, char *argv[])
     LUdecomposition(a,l,n);
     
     y = forward_substitution(l, y, b, n);
-    
-    cout << "done" << endl;
     
     x = backward_substitution(a, x, y, n); // here we use a as the upper
     
