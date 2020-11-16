@@ -1,5 +1,8 @@
 //-----------------------------------------------------------------------
-// LU Decomp - OpenMP
+// Parallel LU Decomposition - C++ OpenMP
+//-----------------------------------------------------------------------
+// Programming by Tobby Lie, Anthony Dupont, Trystan Kaes, Marcus Gallegos
+// Update in 11/16/2020
 //-----------------------------------------------------------------------
 #include <iostream>
 #include <iomanip>
@@ -196,6 +199,7 @@ float* forward_substitution(float** l, float* y, float* b, int n)
 {
     int i, j;
     
+    // initialize y vector to b vector
     #pragma omp parallel shared(b, y) private(i)
     {
         #pragma omp for schedule(static)
@@ -205,6 +209,10 @@ float* forward_substitution(float** l, float* y, float* b, int n)
         }
     }
     
+    // because in the lower triangle matrix, the diagonal is all 1's
+    // we can just take each element in vector y and subtract
+    // it's corresponding row elements in matrix l except for the
+    // diagonal element
     for (i = 1; i < n; i++)
     {
         #pragma omp parallel shared(l, y) private(j)
@@ -229,12 +237,13 @@ float* backward_substitution(float** u, float* x, float* y, int n)
     
     x[n - 1] = y[n - 1] / u[n - 1][n - 1]; // get very last element
     
-    // populate every other element in same column with product
     float **temp_vec = new float*[n];
     
     for (i = 0; i < n; i++)
         temp_vec[i] = new float[n];
     
+    // copy upper into temp_vec so that the contents of upper can be
+    // preserved to print later
     #pragma omp parallel shared(temp_vec, u) private(i, j)
     {
         #pragma omp for schedule(static)
@@ -253,24 +262,30 @@ float* backward_substitution(float** u, float* x, float* y, int n)
         // traverse rows
         #pragma omp parallel shared(temp_vec, x) private(j, k)
         {
+            // populate every other element in same column with product
             #pragma omp for schedule(static)
             for(j = i - 1; j >= 0; j--)
             {
                 temp_vec[j][i] = temp_vec[j][i] * x[i];
             }
         
+            // assign current element in x vector to corresponding
+            // element in y vector
             #pragma omp single
             {
                 x[i - 1] = y[i - 1];
             }
             
-            
+            // Solve for that row's x value
             #pragma omp for schedule(static)
             for (int k = i; k < n; k++)
             {
                 x[i - 1] -= temp_vec[i-1][k];
             }
         }
+        
+        // finally divide x value by the corresponding element
+        // in temp_vec
         x[i - 1] = x[i - 1] / temp_vec[i - 1][i - 1];
     }
     
