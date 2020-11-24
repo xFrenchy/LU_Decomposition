@@ -1,4 +1,5 @@
 # LU_Decomposition in OpenMP, MPI, & CUDA
+
 ###### Anthony Dupont, Trystan Kaes, Tobby Lie, Marcus Gallegos
 
 ## To run the Sequential version on heracles:
