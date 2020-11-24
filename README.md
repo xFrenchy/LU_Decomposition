@@ -21,5 +21,5 @@ Replace # with a number to represent the amount of processes, tasks per node, an
 > sbatch lu_decomp_omp_slurm.sh (size of matrix) (number of threads to run program with) (print yes = 1, print no = 0)
 
 ## To run the CUDA version of heracles:
-
+> ssh node18 nvcc -arch=sm_30 $PWD/LU-Decomp-CUDA.cu -o $PWD/LU-Decomp-CUDA
 > I don't know. Why are you looking at me? 
