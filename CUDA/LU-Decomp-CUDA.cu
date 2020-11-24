@@ -10,8 +10,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <cuda.h>
-#include "kernels.cuh"
-#include "utilities.cuh"
 
 void DeleteMatrix(float**,int);
 void PrintMatrix(float **, int);
@@ -25,8 +23,8 @@ __global__ void LUDecomp(float **a, float **lower, float **upper, int pivot, int
     int row = blockIdx.x + k; // ? Maybe not 1 here
     int col = threadIdx.x + k;
 
-    if (row < n && col < n) {
-        temp = pivot*a[row][k];
+    if (row < thiccness && col < thiccness) {
+        int temp = pivot*a[row][k];
         upper[row][col] = a[row][col] + temp*a[k][col];
         lower[row][col] = lower[row][col] + temp*lower[k][col];
     }
@@ -62,14 +60,14 @@ int main(int argc, char *argv[]){
 	cudaMalloc((void**)&d_upper, n*n*sizeof(float));
 
 	//Copy data to the device
-	cudaMemcpy(d_a, a[0], n*n*sizeof(float), cudaMemcpyHostToDevice);
-	cudaMemcpy(d_lower, d_lower[0], n*n*sizeof(float), cudaMemcpyHostToDevice);
-	cudaMemcpy(d_upper, d_upper[0], n*n*sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemcpy(d_a, a, n*n*sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemcpy(d_lower, d_lower, n*n*sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemcpy(d_upper, d_upper, n*n*sizeof(float), cudaMemcpyHostToDevice);
 	
 
 	/* Compute the LU Decomposition <-Holy wow we are going 
 					with the naive approach but I don't want to be smart right now. */
-	cudaLUDecomp(d_a, d_lower, d_upper, n)
+	cudaLUDecomp(d_a, d_lower, d_upper, n);
 
 	cudaThreadSynchronize();
 
@@ -84,7 +82,7 @@ int main(int argc, char *argv[]){
 	// printf("Upper:\n");
 	// PrintMatrix(upper,n); 
 
-	/Get results from the device
+	//Get results from the device
 	cudaMemcpy(lower[0],d_lower, n*n*sizeof(float),cudaMemcpyDeviceToHost);
 	cudaMemcpy(upper[0],d_upper, n*n*sizeof(float),cudaMemcpyDeviceToHost);
 	
@@ -94,7 +92,7 @@ int main(int argc, char *argv[]){
 	// TODO: Write the substitution function. That is a future problem.
 	
 	//Print the output matrix
-	if (isPrint==1)
+	if (isPrintMatrix==1)
 	{
 		printf("A:\n");
 		PrintMatrix(a,n); 
@@ -121,40 +119,21 @@ int main(int argc, char *argv[]){
 
 
 int cudaLUDecomp(float **a, float **lower, float **upper, int thicness){
-	float pivot,gmax,pmax,temp;
-	int  pindmax,gindmax,i,j,k, numBlocks, threadsPerBlock;
+	float pivot;
+	int numBlocks, numThreads;
 
-	for(int k = 0; k < thiccness; ++k){
-		gmax = 0.0;
-		pmax = 0.0;
+	for(int k = 0; k < thicness; ++k){
 
-		//Find the pivot row
-		for (int i = k ; i < thicness ; ++i) {	
-
-			temp = abs(a[i][k]);     
-
-			if (temp > pmax) {
-				pmax = temp;
-				pindmax = i;
-			}
-		}
-
-		if (gmax < pmax){
-			gmax = pmax;
-			gindmax = pindmax;
-		}
-
-		if (max == 0) return -1;
-		
 		pivot = -1.0/a[k][k];	
+		lower[k][k] = 1;
 
-		numBlocks = thicness-k
-		numThreads = thicness-k // Since all of these are square these are the same.
+		numBlocks = thicness-k;
+		numThreads = thicness-k; // Since all of these are square these are the same.
 
-		dim3 dimGrid(numblock,1);	
+		dim3 dimGrid(numBlocks,1);	
 		dim3 dimBlock(numThreads,1);	
 
-		LUDecomp<<<dimGrid,dimBlock>>>(a,lower,upper,pivot, k, thiccness);
+		LUDecomp<<<dimGrid,dimBlock>>>(a,lower,upper,pivot, k, thicness);
 	}
 	return 0;
 }
@@ -193,10 +172,10 @@ bool GetUserInput(int argc, char *argv[],int& n,int& isPrint)
 	
 	if(argc < 2) 
 	{
-		cout << "Arguments:<X> [<Y>]" << endl;
-		cout << "X : Matrix size [X x X]" << endl;
-		cout << "Y = 1: print the input/output matrix if X < 10" << endl;
-		cout << "Y <> 1 or missing: does not print the input/output matrix" << endl;
+		printf("Arguments:<X> [<Y>]");
+		printf("X : Matrix size [X x X]");
+		printf("Y = 1: print the input/output matrix if X < 10");
+		printf("Y <> 1 or missing: does not print the input/output matrix");
 		isOK = false;
 	}
 	else 
@@ -205,7 +184,7 @@ bool GetUserInput(int argc, char *argv[],int& n,int& isPrint)
 		n = atoi(argv[1]);
 		if (n <=0) 
 		{
-			cout << "Matrix size must be larger than 0" <<endl;
+			printf("Matrix size must be larger than 0");
 			isOK = false;
 		}
 		//is print the input/output matrix
