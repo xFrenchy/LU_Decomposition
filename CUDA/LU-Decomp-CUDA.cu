@@ -16,20 +16,53 @@ void PrintMatrix(float **, int);
 void InitializeMatrices(float **&, float **&, float **&, int);
 bool GetUserInput(int, char *[], int&,int&);
 void sequentialLUdecomposition(float**, float** &, int);
-int cudaLUDecomp(float **, float **, float **, int);
 
-__global__ void LUDecomp(float **a, float **lower, float **upper, int pivot, int k, int thiccness){
+void cudaLUDecomp(float **a, float *d_a, float *d_lower, float *d_upper, int thicness){
+
+	float pivot;
+	int i, numBlocks, numThreads;
+
+	for(i = 0; i < thicness; ++pivot_i){
+
+		pivot = -1.0/a[i][i];	
+
+		numBlocks = thicness-i;
+		numThreads = thicness-i; // Since all of these are square these are the same.
+
+		dim3 dimGrid(numBlocks,1);	
+		dim3 dimBlock(numThreads,1);	
+
+		RowOperation<<<dimGrid,dimBlock>>>(d_a, d_lower, d_upper, pivot, i, thicness);
+	}
+
+	//Get results from the device
+	cudaMemcpy(lower[0],d_lower, n*n*sizeof(float),cudaMemcpyDeviceToHost);
+	cudaMemcpy(upper[0],d_upper, n*n*sizeof(float),cudaMemcpyDeviceToHost);
+}
+
+
+__global__ void RowOperation(float *a, float *lower, float *upper, int pivot, int i, int thicness){
+	if(blockIdx.x * blockDim.x  + threadIdx.x == 0) {// Lets get this out of the way
+		lower[ k*thicness + k ] = 1; //lower[i][i] = 1
+	}
+	
     // Lets get some readability up in here.
-    int row = blockIdx.x + k; // ? Maybe not 1 here
-    int col = threadIdx.x + k;
+    int k = blockIdx.x + i + 1; // local_k
+	int j = threadIdx.x + i; // local_j
+	
+	if( k < thicness && j < thicness){
 
-    if (row < thiccness && col < thiccness) {
-        int temp = pivot*a[row][k];
-        upper[row][col] = a[row][col] + temp*a[k][col];
-        lower[row][col] = lower[row][col] + temp*lower[k][col];
-    }
+		float temp = pivot*a[k*thicness + i];
+
+		lower[k*thicness + i] = a[k*thicness + i]/a[i*thicness + i];
+
+		upper[k*thicness + j] = a[k*thicness + j] + temp * a[i*thicness + j];
+
+
+	}
     
 }
+
 
 //------------------------------------------------------------------
 // Main Program
@@ -54,55 +87,34 @@ int main(int argc, char *argv[]){
 	//Get start time
 	runtime = clock()/(float)CLOCKS_PER_SEC;
 
-	//Allocate memory on device
 	cudaMalloc((void**)&d_a, n*n*sizeof(float));
 	cudaMalloc((void**)&d_lower, n*n*sizeof(float));
 	cudaMalloc((void**)&d_upper, n*n*sizeof(float));
+	cudaMemcpy(d_a, a[0], n*n*sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemcpy(d_lower, lower[0], n*n*sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemcpy(d_upper, upper[0], n*n*sizeof(float), cudaMemcpyHostToDevice);
 
-	//Copy data to the device
-	cudaMemcpy(d_a, a, n*n*sizeof(float), cudaMemcpyHostToDevice);
-	cudaMemcpy(d_lower, d_lower, n*n*sizeof(float), cudaMemcpyHostToDevice);
-	cudaMemcpy(d_upper, d_upper, n*n*sizeof(float), cudaMemcpyHostToDevice);
+	cudaLUDecomp(a, n, d_a, d_lower, d_upper);
+
 	
-
-	/* Compute the LU Decomposition <-Holy wow we are going 
-					with the naive approach but I don't want to be smart right now. */
-	cudaLUDecomp(d_a, d_lower, d_upper, n);
-
-	cudaThreadSynchronize();
-
-	// // Sequential Verification
-	// sequentialLUdecomposition(a, l, n);
-	// printf("A:\n");
-	// PrintMatrix(a,n); 
-
-	// printf("Lower:\n");
-	// PrintMatrix(lower,n); 
-
-	// printf("Upper:\n");
-	// PrintMatrix(upper,n); 
-
-	//Get results from the device
-	cudaMemcpy(lower[0],d_lower, n*n*sizeof(float),cudaMemcpyDeviceToHost);
+    //Get results from the device
+    cudaMemcpy(lower[0],d_lower, n*n*sizeof(float),cudaMemcpyDeviceToHost);
 	cudaMemcpy(upper[0],d_upper, n*n*sizeof(float),cudaMemcpyDeviceToHost);
 	
+	cudaThreadSynchronize();
 	runtime = clock() - runtime; //Make note of LU Decomp
 
 
 	// TODO: Write the substitution function. That is a future problem.
 	
-	//Print the output matrix
-	if (isPrintMatrix==1)
-	{
-		printf("A:\n");
-		PrintMatrix(a,n); 
+	printf("A:\n");
+	PrintMatrix(a,n); 
 
-		printf("Lower:\n");
-		PrintMatrix(lower,n); 
+	printf("Lower:\n");
+	PrintMatrix(lower,n); 
 
-		printf("Upper:\n");
-		PrintMatrix(upper,n); 
-	}
+	printf("Upper:\n");
+	PrintMatrix(upper,n); 
 
 	printf("LU Decomposition ran in %.2f seconds\n", (runtime)/float(CLOCKS_PER_SEC));
 	
@@ -114,27 +126,6 @@ int main(int argc, char *argv[]){
 	DeleteMatrix(lower,n);	
 	DeleteMatrix(a,n);	
 
-	return 0;
-}
-
-
-int cudaLUDecomp(float **a, float **lower, float **upper, int thicness){
-	float pivot;
-	int numBlocks, numThreads;
-
-	for(int k = 0; k < thicness; ++k){
-
-		pivot = -1.0/a[k][k];	
-		lower[k][k] = 1;
-
-		numBlocks = thicness-k;
-		numThreads = thicness-k; // Since all of these are square these are the same.
-
-		dim3 dimGrid(numBlocks,1);	
-		dim3 dimBlock(numThreads,1);	
-
-		LUDecomp<<<dimGrid,dimBlock>>>(a,lower,upper,pivot, k, thicness);
-	}
 	return 0;
 }
 
