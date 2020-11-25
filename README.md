@@ -14,12 +14,14 @@
 
 Replace # with a number to represent the amount of processes, tasks per node, and matrix size respectively
 
-## To run the OpenMP version of heracles:
+## To run the OpenMP version on heracles:
 
 > g++ -O -fopenmp LU-Decomp-OpenMP.cpp -o LU-Decomp-OpenMP
 
 > sbatch lu_decomp_omp_slurm.sh (size of matrix) (number of threads to run program with) (print yes = 1, print no = 0)
 
-## To run the CUDA version of heracles:
+## To run the CUDA version on heracles:
+
 > ssh node18 nvcc -arch=sm_30 $PWD/LU-Decomp-CUDA.cu -o $PWD/LU-Decomp-CUDA
-> I don't know. Why are you looking at me? 
+
+> sbatch lu_decomp_cuda_slurm.sh <size> <isPrint>
