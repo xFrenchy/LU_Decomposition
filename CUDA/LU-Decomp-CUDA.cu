@@ -18,16 +18,18 @@ bool GetUserInput(int, char *[], int&,int&);
 void sequentialLUdecomposition(float**, float** &, int);
 
 
-__global__ void RowOperation(float *lower, float *upper, int i, int thicness){
-
-	int k = blockIdx.x + i + 1;
-	int j = threadIdx.x + i;
-
-	__shared__ double pivot;
+__global__ void RowOperations(float *lower, float *upper, int i, int thicness){
 
 	// Let us get this diagonal thing out of the way
 	if(blockIdx.x * blockDim.x  + threadIdx.x == 0) 
 		lower[ i*thicness + i ] = 1; 
+
+	int k = blockIdx.x + i + 1;
+	int j = threadIdx.x + i;
+	
+	if( !( k < thicness && j < thicness) ) return; // Whoops
+
+	__shared__ double pivot;
 
 	// And get one pivot per block
 	if(threadIdx.x == 0) 
@@ -36,14 +38,11 @@ __global__ void RowOperation(float *lower, float *upper, int i, int thicness){
 
 	 // Hey guys! Wait up!
 	__syncthreads();
+
+	// It is worth noting that the matrices are column major here
+	lower[k + thicness*i] = upper[k + thicness*i]/upper[i + thicness*i];
+	upper[k + thicness*j] = upper[k + thicness*j] + pivot*upper[k + thicness*i] * upper[i + thicness*j];
 	
-	if( k < thicness && j < thicness){
-
-		// It is worth noting that the matrices are column major here
-		lower[k + thicness*i] = upper[k + thicness*i]/upper[i + thicness*i];
-		upper[k + thicness*j] = upper[k + thicness*j] + pivot*upper[k + thicness*i] * upper[i + thicness*j];
-
-	}
     
 }
 
@@ -59,7 +58,7 @@ void cudaLUDecomp(float *d_lower, float *d_upper, int thicness){
 		dim3 dimGrid(numBlocks,1);	
 		dim3 dimBlock(numThreads,1);	
 
-		RowOperation<<<dimGrid,dimBlock>>>(d_lower, d_upper, i, thicness);
+		RowOperations<<<dimGrid,dimBlock>>>(d_lower, d_upper, i, thicness);
 	}
 }
 
