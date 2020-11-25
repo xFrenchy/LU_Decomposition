@@ -17,33 +17,10 @@ void InitializeMatrices(float **&, float **&, float **&, int);
 bool GetUserInput(int, char *[], int&,int&);
 void sequentialLUdecomposition(float**, float** &, int);
 
-void cudaLUDecomp(float **a, float *d_a, float *d_lower, float *d_upper, int thicness){
-
-	float pivot;
-	int i, numBlocks, numThreads;
-
-	for(i = 0; i < thicness; ++pivot_i){
-
-		pivot = -1.0/a[i][i];	
-
-		numBlocks = thicness-i;
-		numThreads = thicness-i; // Since all of these are square these are the same.
-
-		dim3 dimGrid(numBlocks,1);	
-		dim3 dimBlock(numThreads,1);	
-
-		RowOperation<<<dimGrid,dimBlock>>>(d_a, d_lower, d_upper, pivot, i, thicness);
-	}
-
-	//Get results from the device
-	cudaMemcpy(lower[0],d_lower, n*n*sizeof(float),cudaMemcpyDeviceToHost);
-	cudaMemcpy(upper[0],d_upper, n*n*sizeof(float),cudaMemcpyDeviceToHost);
-}
-
 
 __global__ void RowOperation(float *a, float *lower, float *upper, int pivot, int i, int thicness){
 	if(blockIdx.x * blockDim.x  + threadIdx.x == 0) {// Lets get this out of the way
-		lower[ k*thicness + k ] = 1; //lower[i][i] = 1
+		lower[ i*thicness + i ] = 1; //lower[i][i] = 1
 	}
 	
     // Lets get some readability up in here.
@@ -61,6 +38,25 @@ __global__ void RowOperation(float *a, float *lower, float *upper, int pivot, in
 
 	}
     
+}
+
+void cudaLUDecomp(float **a, float *d_a, float *d_lower, float *d_upper, int thicness){
+
+	float pivot;
+	int i, numBlocks, numThreads;
+
+	for(i = 0; i < thicness; ++i){
+
+		pivot = -1.0/a[i][i];	
+
+		numBlocks = thicness-i;
+		numThreads = thicness-i; // Since all of these are square these are the same.
+
+		dim3 dimGrid(numBlocks,1);	
+		dim3 dimBlock(numThreads,1);	
+
+		RowOperation<<<dimGrid,dimBlock>>>(d_a, d_lower, d_upper, pivot, i, thicness);
+	}
 }
 
 
@@ -94,7 +90,7 @@ int main(int argc, char *argv[]){
 	cudaMemcpy(d_lower, lower[0], n*n*sizeof(float), cudaMemcpyHostToDevice);
 	cudaMemcpy(d_upper, upper[0], n*n*sizeof(float), cudaMemcpyHostToDevice);
 
-	cudaLUDecomp(a, n, d_a, d_lower, d_upper);
+	cudaLUDecomp(a, d_a, d_lower, d_upper, n);
 
 	
     //Get results from the device
