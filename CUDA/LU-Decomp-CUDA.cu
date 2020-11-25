@@ -18,43 +18,48 @@ bool GetUserInput(int, char *[], int&,int&);
 void sequentialLUdecomposition(float**, float** &, int);
 
 
-__global__ void RowOperation(float *lower, float *upper, int pivot, int i, int thicness){
-	if(blockIdx.x * blockDim.x  + threadIdx.x == 0) {// Lets get this out of the way
-		lower[ i*thicness + i ] = 1; //lower[i][i] = 1
-	}
+__global__ void RowOperation(float *lower, float *upper, int i, int thicness){
+
+	int k = blockIdx.x + i + 1;
+	int j = threadIdx.x + i;
+
+	__shared__ double pivot;
+
+	// Let us get this diagonal thing out of the way
+	if(blockIdx.x * blockDim.x  + threadIdx.x == 0) 
+		lower[ i*thicness + i ] = 1; 
+
+	// And get one pivot per block
+	if(threadIdx.x == 0) 
+		pivot = -1.0/upper[ i*thicness + i ];
 	
-    // Lets get some readability up in here.
-    int k = blockIdx.x + i + 1; // local_k
-	int j = threadIdx.x + i; // local_j
+
+	 // Hey guys! Wait up!
+	__syncthreads();
 	
 	if( k < thicness && j < thicness){
 
-		float temp = pivot*upper[k*thicness + i];
-
-		lower[k*thicness + i] = upper[k*thicness + i]/upper[i*thicness + i];
-
-		upper[k*thicness + j] = upper[k*thicness + j] + temp * upper[i*thicness + j];
+		// It is worth noting that the matrices are column major here
+		lower[k + thicness*i] = upper[k + thicness*i]/upper[i + thicness*i];
+		upper[k + thicness*j] = upper[k + thicness*j] + pivot*upper[k + thicness*i] * upper[i + thicness*j];
 
 	}
     
 }
 
-void cudaLUDecomp(float **a, float *d_a, float *d_lower, float *d_upper, int thicness){
+void cudaLUDecomp(float *d_lower, float *d_upper, int thicness){
 
-	float pivot;
 	int i, numBlocks, numThreads;
 
 	for(i = 0; i < thicness; ++i){
 
-		pivot = -1.0/a[i][i];	
-
-		numBlocks = thicness-i;
-		numThreads = thicness-i; // Since all of these are square these are the same.
+		// Since all of these are square these are the same.
+		numBlocks = numThreads = thicness-i;
 
 		dim3 dimGrid(numBlocks,1);	
 		dim3 dimBlock(numThreads,1);	
 
-		RowOperation<<<dimGrid,dimBlock>>>(d_lower, d_upper, pivot, i, thicness);
+		RowOperation<<<dimGrid,dimBlock>>>(d_lower, d_upper, i, thicness);
 	}
 }
 
@@ -68,7 +73,7 @@ int main(int argc, char *argv[]){
 	//Matrices
 	float **a, **lower, **upper;
 	//Device pointers
-	float *d_a, *d_lower, *d_upper;
+	float *d_lower, *d_upper;
 	
 	int	n,isPrintMatrix;
 	float runtime;
@@ -83,14 +88,12 @@ int main(int argc, char *argv[]){
 	//Get start time
 	runtime = clock()/(float)CLOCKS_PER_SEC;
 
-	cudaMalloc((void**)&d_a, n*n*sizeof(float));
 	cudaMalloc((void**)&d_lower, n*n*sizeof(float));
 	cudaMalloc((void**)&d_upper, n*n*sizeof(float));
-	cudaMemcpy(d_a, a[0], n*n*sizeof(float), cudaMemcpyHostToDevice);
 	cudaMemcpy(d_upper, upper[0], n*n*sizeof(float), cudaMemcpyHostToDevice);
 	cudaMemcpy(d_lower, lower[0], n*n*sizeof(float), cudaMemcpyHostToDevice);
 
-	cudaLUDecomp(a, d_a, d_lower, d_upper, n);
+	cudaLUDecomp(d_lower, d_upper, n);
 
 	
     //Get results from the device
@@ -116,7 +119,6 @@ int main(int argc, char *argv[]){
 	
 	cudaFree(d_lower);
 	cudaFree(d_upper);
-	cudaFree(d_a);
 
 	DeleteMatrix(upper,n);	
 	DeleteMatrix(lower,n);	
