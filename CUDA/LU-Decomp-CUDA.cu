@@ -18,7 +18,7 @@ bool GetUserInput(int, char *[], int&,int&);
 void sequentialLUdecomposition(float**, float** &, int);
 
 
-__global__ void RowOperation(float *a, float *lower, float *upper, int pivot, int i, int thicness){
+__global__ void RowOperation(float *lower, float *upper, int pivot, int i, int thicness){
 	if(blockIdx.x * blockDim.x  + threadIdx.x == 0) {// Lets get this out of the way
 		lower[ i*thicness + i ] = 1; //lower[i][i] = 1
 	}
@@ -29,12 +29,11 @@ __global__ void RowOperation(float *a, float *lower, float *upper, int pivot, in
 	
 	if( k < thicness && j < thicness){
 
-		float temp = pivot*a[k*thicness + i];
+		float temp = pivot*upper[k*thicness + i];
 
-		lower[k*thicness + i] = a[k*thicness + i]/a[i*thicness + i];
+		lower[k*thicness + i] = upper[k*thicness + i]/upper[i*thicness + i];
 
-		upper[k*thicness + j] = a[k*thicness + j] + temp * a[i*thicness + j];
-
+		upper[k*thicness + j] = upper[k*thicness + j] + temp * upper[i*thicness + j];
 
 	}
     
@@ -55,7 +54,7 @@ void cudaLUDecomp(float **a, float *d_a, float *d_lower, float *d_upper, int thi
 		dim3 dimGrid(numBlocks,1);	
 		dim3 dimBlock(numThreads,1);	
 
-		RowOperation<<<dimGrid,dimBlock>>>(d_a, d_lower, d_upper, pivot, i, thicness);
+		RowOperation<<<dimGrid,dimBlock>>>(d_lower, d_upper, pivot, i, thicness);
 	}
 }
 
@@ -78,6 +77,7 @@ int main(int argc, char *argv[]){
 	if (!GetUserInput(argc,argv,n,isPrintMatrix)) return 1;
 
 	//Initialize the matrices
+	// a == upper and lower -> 0
 	InitializeMatrices(a, lower, upper, n);
 
 	//Get start time
@@ -87,8 +87,8 @@ int main(int argc, char *argv[]){
 	cudaMalloc((void**)&d_lower, n*n*sizeof(float));
 	cudaMalloc((void**)&d_upper, n*n*sizeof(float));
 	cudaMemcpy(d_a, a[0], n*n*sizeof(float), cudaMemcpyHostToDevice);
-	cudaMemcpy(d_lower, lower[0], n*n*sizeof(float), cudaMemcpyHostToDevice);
 	cudaMemcpy(d_upper, upper[0], n*n*sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemcpy(d_lower, lower[0], n*n*sizeof(float), cudaMemcpyHostToDevice);
 
 	cudaLUDecomp(a, d_a, d_lower, d_upper, n);
 
@@ -212,16 +212,8 @@ void InitializeMatrices(float **&a, float **&lower, float **&upper, int size){
 	
 	for(int i = 0; i < size; ++i){
 		for(int j = 0; j < size; ++j){
-			a[i][j] = (rand() % 11) + 1;
-			if(i == j){
-				//we fill the diagonal with 1's
-				lower[i][j] = 1;
-				upper[i][j] = 1;	
-			}
-			else{
-				lower[i][j] = 0;
-				upper[i][j] = 0;
-			}
+			upper[i][j] = a[i][j] = (rand() % 11) + 1;
+			lower[i][j] = 0;
 		}
 	}
 }
