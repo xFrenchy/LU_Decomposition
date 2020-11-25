@@ -11,13 +11,155 @@
 #include <stdlib.h>
 #include <cuda.h>
 
-void DeleteMatrix(float**,int);
-void PrintMatrix(float **, int);
-void InitializeMatrices(float **&, float **&, float **&, int);
 bool GetUserInput(int, char *[], int&,int&);
-void sequentialLUdecomposition(float**, float** &, int);
+
+void InitializeMatrices(float **&, float **&, float **&, int);
+void InitializeVectors(float *&, float*&, float*&, int);
+
+void PrintMatrix(float **, int);
+void PrintVector(float*, int);
+
+void DeleteMatrix(float**,int);
+void DeleteVector(float *);
+
+void LUDecomp(float *, float *, int);
 
 
+__global__ void RowOperations(float *, float *, int, int);
+__global__ void ForwardSubstitution(float *, float *, float* , int);
+__global__ void BackwardSubstitution(float *, float *, float* , int);
+
+
+//------------------------------------------------------------------
+// Main Program
+//------------------------------------------------------------------
+int main(int argc, char *argv[]){
+	srand(time(NULL));	//set the seed
+	
+	float **a, **lower, **upper; 				//Matrices
+	float *b, *x, *y; 							//Vectors
+	float *d_lower, *d_upper, *d_b, *d_x, *d_y; //Device pointers
+	
+	int	n,isPrint;
+	float runtime;
+
+	if (!GetUserInput(argc,argv,n,isPrint)) return 1;
+
+	// a == upper and lower -> 0
+	InitializeMatrices(a, lower, upper, n);
+	InitializeVectors(x, y, b, n);
+
+	//Get start time
+	runtime = clock()/(float)CLOCKS_PER_SEC;
+
+	// ######################### BEGIN LU Decomp ##############################3
+		cudaMalloc((void**)&d_lower, n*n*sizeof(float));
+		cudaMalloc((void**)&d_upper, n*n*sizeof(float));
+		cudaMemcpy(d_upper, upper[0], n*n*sizeof(float), cudaMemcpyHostToDevice);
+		cudaMemcpy(d_lower, lower[0], n*n*sizeof(float), cudaMemcpyHostToDevice);
+
+		LUDecomp(d_lower, d_upper, n);
+
+		cudaDeviceSynchronize();
+	// ######################### END LU Decomp ##############################3
+
+
+	// ######################### BEGIN Substitution ##############################
+		cudaMalloc((void**)&d_b, n*sizeof(float));
+		cudaMalloc((void**)&d_x, n*sizeof(float));
+		cudaMalloc((void**)&d_y, n*sizeof(float));
+		cudaMemcpy(d_b, b, n*sizeof(float), cudaMemcpyHostToDevice);
+		cudaMemcpy(d_x, x, n*sizeof(float), cudaMemcpyHostToDevice);
+		cudaMemcpy(d_y, y, n*sizeof(float), cudaMemcpyHostToDevice);
+
+		dim3 dimGrid(n,1);	
+		dim3 dimBlock(n,1);
+
+		ForwardSubstitution<<<dimGrid, dimBlock>>>(d_lower, d_y, d_b, n);
+		BackwardSubstitution<<<dimGrid, dimBlock>>>(d_upper, d_x, d_y, n);
+		
+		cudaDeviceSynchronize();
+	// ######################### END Substitution ##############################3
+
+
+	// ######################### BEGIN Copy Back ##############################
+		cudaMemcpy(lower[0],d_lower, n*n*sizeof(float),cudaMemcpyDeviceToHost);
+		cudaMemcpy(upper[0],d_upper, n*n*sizeof(float),cudaMemcpyDeviceToHost);
+		cudaMemcpy(x,d_x, n*sizeof(float),cudaMemcpyDeviceToHost);
+		cudaMemcpy(y,d_y, n*sizeof(float),cudaMemcpyDeviceToHost);
+	// ######################### END Copy Back ##############################
+
+	runtime = clock() - runtime; //Make note of time
+
+	if(isPrint == 1){
+		printf("A:\n");
+		PrintMatrix(a,n); 
+
+		printf("B:\n");
+		PrintVector(b,n); 
+
+		printf("--------------------------------------------------\n");
+
+		printf("Lower:\n");
+		PrintMatrix(lower,n); 
+
+		printf("Upper:\n");
+		PrintMatrix(upper,n); 
+
+		printf("Y:\n");
+		PrintVector(y,n); 
+
+		printf("X:\n");
+		PrintVector(x,n); 
+
+	}
+
+	printf("LU Decomposition and Forward/Backward substitution to solve Ax=B ran in %.2f seconds\n", (runtime)/float(CLOCKS_PER_SEC));
+	
+	
+	cudaFree(d_lower);
+	cudaFree(d_upper);
+	cudaFree(d_b);
+	cudaFree(d_x);
+	cudaFree(d_y);
+
+	DeleteMatrix(upper,n);	
+	DeleteMatrix(lower,n);	
+	DeleteMatrix(a,n);	
+
+	DeleteVector(x);
+	DeleteVector(y);
+	DeleteVector(b);
+
+	return 0;
+}
+
+//------------------------------------------------------------------
+//	KERNEL DRIVERS
+//------------------------------------------------------------------
+
+
+void LUDecomp(float *d_lower, float *d_upper, int thicness){
+
+	int i, numBlocks, numThreads;
+
+	for(i = 0; i < thicness; ++i){
+
+		// Since all of these are square these are the same.
+		numBlocks = numThreads = thicness-i;
+
+		dim3 dimGrid(numBlocks,1);	
+		dim3 dimBlock(numThreads,1);	
+
+		RowOperations<<<dimGrid,dimBlock>>>(d_lower, d_upper, i, thicness);
+	}
+}
+
+
+
+//------------------------------------------------------------------
+//	KERNELS
+//------------------------------------------------------------------
 __global__ void RowOperations(float *lower, float *upper, int i, int thicness){
 
 	// Let us get this diagonal thing out of the way
@@ -42,118 +184,66 @@ __global__ void RowOperations(float *lower, float *upper, int i, int thicness){
 	// It is worth noting that the matrices are column major here
 	lower[k + thicness*i] = upper[k + thicness*i]/upper[i + thicness*i];
 	upper[k + thicness*j] = upper[k + thicness*j] + pivot*upper[k + thicness*i] * upper[i + thicness*j];
-	
     
 }
 
-void cudaLUDecomp(float *d_lower, float *d_upper, int thicness){
+__global__ void ForwardSubstitution(float *lower, float *y, float* b, int thicness){
+	if(blockIdx.x * blockDim.x  + threadIdx.x == 0) // Last Element
+		y[0] = b[0] / lower[0];
 
-	int i, numBlocks, numThreads;
+	int i = blockIdx.x + 1; 
+	int j = i - threadIdx.x;
 
-	for(i = 0; i < thicness; ++i){
+	if( !( i < thicness && j < thicness) || ( j < 0 )  ) return; // Whoops
 
-		// Since all of these are square these are the same.
-		numBlocks = numThreads = thicness-i;
+	__shared__ float temp;
 
-		dim3 dimGrid(numBlocks,1);	
-		dim3 dimBlock(numThreads,1);	
+	if(threadIdx.x == 0) 
+		temp = b[i];
 
-		RowOperations<<<dimGrid,dimBlock>>>(d_lower, d_upper, i, thicness);
-	}
+	// Hey guys! Wait up!
+	__syncthreads();
+
+	temp = temp - lower[ i + thicness*j] * y[j];
+
+	// Hey guys! Wait up!
+	__syncthreads();
+
+	y[i] = temp/lower[i + thicness*i];
 }
+
+__global__ void BackwardSubstitution(float *upper, float *x, float* y, int thicness){
+	if(blockIdx.x * blockDim.x  + threadIdx.x == 0) 
+		x[thicness - 1] = y[thicness - 1] / upper[(thicness - 1) + thicness*(thicness-1)]; // Last Element
+
+	int i = thicness - blockIdx.x - 2;
+	int j = thicness - i - threadIdx.x - 1;
+
+	if( !( i < thicness && j < thicness) || ( j < 0 )  ) return; // Whoops
+
+	__shared__ float temp;
+
+	if(threadIdx.x == 0) 
+		temp = y[i];
+
+	// Hey guys! Wait up!
+	__syncthreads();
+
+	temp = temp - upper[ i + thicness*j] * x[j];
+
+	// Hey guys! Wait up!
+	__syncthreads();
+
+	x[i] = temp/upper[i + thicness*i];
+}
+
 
 
 //------------------------------------------------------------------
-// Main Program
+//	UTILITIES
 //------------------------------------------------------------------
-int main(int argc, char *argv[]){
-	srand(time(NULL));	//set the seed
-	
-	//Matrices
-	float **a, **lower, **upper;
-	//Device pointers
-	float *d_lower, *d_upper;
-	
-	int	n,isPrintMatrix;
-	float runtime;
 
-	//Get program input
-	if (!GetUserInput(argc,argv,n,isPrintMatrix)) return 1;
-
-	//Initialize the matrices
-	// a == upper and lower -> 0
-	InitializeMatrices(a, lower, upper, n);
-
-	//Get start time
-	runtime = clock()/(float)CLOCKS_PER_SEC;
-
-	cudaMalloc((void**)&d_lower, n*n*sizeof(float));
-	cudaMalloc((void**)&d_upper, n*n*sizeof(float));
-	cudaMemcpy(d_upper, upper[0], n*n*sizeof(float), cudaMemcpyHostToDevice);
-	cudaMemcpy(d_lower, lower[0], n*n*sizeof(float), cudaMemcpyHostToDevice);
-
-	cudaLUDecomp(d_lower, d_upper, n);
-
-	
-    //Get results from the device
-    cudaMemcpy(lower[0],d_lower, n*n*sizeof(float),cudaMemcpyDeviceToHost);
-	cudaMemcpy(upper[0],d_upper, n*n*sizeof(float),cudaMemcpyDeviceToHost);
-	
-	cudaThreadSynchronize();
-	runtime = clock() - runtime; //Make note of LU Decomp
-
-
-	// TODO: Write the substitution function. That is a future problem.
-	
-	printf("A:\n");
-	PrintMatrix(a,n); 
-
-	printf("Lower:\n");
-	PrintMatrix(lower,n); 
-
-	printf("Upper:\n");
-	PrintMatrix(upper,n); 
-
-	printf("LU Decomposition ran in %.2f seconds\n", (runtime)/float(CLOCKS_PER_SEC));
-	
-	cudaFree(d_lower);
-	cudaFree(d_upper);
-
-	DeleteMatrix(upper,n);	
-	DeleteMatrix(lower,n);	
-	DeleteMatrix(a,n);	
-
-	return 0;
-}
-
-void sequentialLUdecomposition(float** a, float** &l, int n)
-{
-    for (int i = 0; i < n; i++)
-    {
-        
-        float temp;
-        float pivot = -1.0/a[i][i];
-        
-        l[i][i] = 1;
-        
-        for (int k = i+1; k < n; k++)
-        {
-            temp = pivot*a[k][i];
-            l[k][i] = a[k][i]/a[i][i];
-            for (int j = i; j < n; j++)
-            {
-                a[k][j] = a[k][j] + temp * a[i][j];
-            }
-        }
-        
-    }
-}
-
-
-
-//-----------------------------------------------------------------------
 //   Get user input of matrix dimension and printing option
-//-----------------------------------------------------------------------
 bool GetUserInput(int argc, char *argv[],int& n,int& isPrint)
 {
 	bool isOK = true;
@@ -185,18 +275,21 @@ bool GetUserInput(int argc, char *argv[],int& n,int& isPrint)
 }
 
 
-//------------------------------------------------------------------
+
 //delete matrix matrix a[n x n]
-//------------------------------------------------------------------
 void DeleteMatrix(float **a,int n)
 {
 	delete[] a[0];
 	delete[] a; 
 }
 
-//------------------------------------------------------------------------------------------------
+
+void DeleteVector(float* x)
+{
+    delete[] x;
+}
+
 //Fills matrix A with random values, upper and lower is filled with 0's except for their diagonals
-//------------------------------------------------------------------------------------------------
 void InitializeMatrices(float **&a, float **&lower, float **&upper, int size){
 	a = new float*[size];
 	a[0] = new float[size*size];
@@ -220,9 +313,22 @@ void InitializeMatrices(float **&a, float **&lower, float **&upper, int size){
 }
 
 
-//------------------------------------------------------------------
+void InitializeVectors(float *&x, float *&y, float*& b, int n) {
+
+    // allocate square 2d matrix
+	x = new float[n];
+	y = new float[n];
+	b = new float[n];
+    
+    
+    for (int j = 0 ; j < n ; j++) {
+		b[j] = (float)(rand() % 11) + 1;
+		x[j] = y[j] = 0;
+    }
+}
+
+
 //Print the matrix that was passed to it
-//------------------------------------------------------------------
 void PrintMatrix(float **matrix, int size) 
 {
 	for (int i = 0 ; i < size ; i++){
@@ -231,4 +337,11 @@ void PrintMatrix(float **matrix, int size)
 		}
 		printf("\n");
 	}
+}
+
+void PrintVector(float* x, int n)
+{
+    for (int j = 0 ; j < n ; j++) {
+        printf("%.2f\n", x[j]);
+    }
 }
