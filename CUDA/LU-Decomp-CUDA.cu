@@ -171,7 +171,7 @@ __global__ void RowOperations(float *lower, float *upper, int i, int thicness){
 	
 	if( !( k < thicness && j < thicness) ) return; // Whoops
 
-	__shared__ double pivot;
+	__shared__ float pivot;
 
 	// And get one pivot per block
 	if(threadIdx.x == 0) 
