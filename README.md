@@ -12,7 +12,7 @@
 
 > mpicxx LU-Decomp-MPI.cpp -o LU-Decomp-MPI
 
-> mpirun -print-rank-map -n # -ppn # ./LU-Decomp-MPI -n (number of processes) -ppn (tasks per node) (matrix size) 1
+> mpirun -print-rank-map -n (number of processes) -ppn (tasks per node) ./LU-Decomp-MPI (matrix size) 1
 
 ## To run the OpenMP version on heracles:
 
