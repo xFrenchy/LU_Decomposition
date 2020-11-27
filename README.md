@@ -10,9 +10,9 @@
 
 ## To run the MPI version on heracles:
 
-> mpirun -print-rank-map -n # -ppn # ./ProgramName # 1
+> mpicxx LU-Decomp-MPI.cpp -o LU-Decomp-MPI
 
-Replace # with a number to represent the amount of processes, tasks per node, and matrix size respectively
+> mpirun -print-rank-map -n # -ppn # ./LU-Decomp-MPI -n (number of processes) -ppn (tasks per node) (matrix size) 1
 
 ## To run the OpenMP version on heracles:
 
@@ -24,4 +24,4 @@ Replace # with a number to represent the amount of processes, tasks per node, an
 
 > ssh node18 nvcc -arch=sm_30 $PWD/LU-Decomp-CUDA.cu -o $PWD/LU-Decomp-CUDA
 
-> sbatch lu_decomp_cuda_slurm.sh <size> <isPrint>
+> sbatch lu_decomp_cuda_slurm.sh (size) (print yes = 1, print no = 0)
