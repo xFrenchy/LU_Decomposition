@@ -222,7 +222,7 @@ int main(int argc, char *argv[])
 
 	if (GetUserInput(argc,argv,n,isPrint)==false) return 1;
 
-    cout << "Starting sequential LU decomposition" << endl;
+    cout << "Starting sequential LU decomposition with forward/back substitution" << endl;
     cout << "matrix size = " << n << "x " << n << endl;
 
 	//Initialize the value of matrix a, l, u
@@ -265,10 +265,10 @@ int main(int argc, char *argv[])
         cout<< "U matrix:" << endl;
         PrintMatrix(a,n);
         
-        cout<< "y vector:" << endl;
+        cout<< "y vector from forward substitution:" << endl;
         PrintVector(y, n);
         
-        cout<< "x vector:" << endl;
+        cout<< "x vector from back substitution:" << endl;
         PrintVector(x, n);
 	}
 	cout<< "Program runs in " << setiosflags(ios::fixed) << setprecision(8) << runtime << " seconds\n";
