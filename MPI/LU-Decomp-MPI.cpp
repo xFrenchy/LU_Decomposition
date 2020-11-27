@@ -419,27 +419,10 @@ void forwardSubstitution(float **lower, float *vector, int size, int numProcesse
 				lowerRow[i][j] = lower[j][i];
 			}
 		}
-		//DEBUGGING
-		/*for(int i = 0; i < size; ++i)
-			for(int j = 0; j < size; ++j)
-				printf("%0.2f, ", lowerRow[i][j]);
-		//printf("%0.2f\n",lowerRow[0]);*/
 	}
-	
-	/*if(myProcessID == 1){
-			for(int j = 0; j < rowSize; ++j){
-				for(int k = 0; k < size; ++k){
-					printf("%0.2f, ", b[j][k]);
-				}
-			}
-			printf("End\n");
-		}*/
 	MPI_Bcast(tmp,size,MPI_FLOAT,0,MPI_COMM_WORLD);
-	//printf("Size*rowSize: %d\n", size*rowSize);
-	//printf("%0.2f\n", b[0]);
 	MPI_Scatter(lowerRow[0],size*rowSize,MPI_FLOAT,b[0],size*rowSize,MPI_FLOAT,0,MPI_COMM_WORLD);
 	for(int i = 0; i < size; ++i){
-		//Iterate over the length of a row chunk
 		
 		master = i/rowSize;	
 		//Solve one step of each row in a parallel fashion 'snap' before iterating over to the index
@@ -447,38 +430,31 @@ void forwardSubstitution(float **lower, float *vector, int size, int numProcesse
 			//This row is solvable, solve it, broadcast it
 			bcastVal = (tmp[i]/b[i%rowSize][i]);
 			solution[i] = bcastVal;
-			printf("x%d: %0.2f\n", i, bcastVal);
-			
+
 			for(int j = 1; j < rowSize; ++j){
-				tmp[j] -= b[j][i]*bcastVal;
+				int row = myProcessID*rowSize + (j);
+				tmp[row] -= b[j][i]*bcastVal;
 			}
 		}
 			
-		//BEEEEEEEEEEEEEEEEP BEEEEEEEEEEEEEEEEEP BEEEEEEEEEEEEEEEP WE INTERUPT THIS PROGRAM BECAUSE SOME X WAS SOLVED
+		//BEEEEEEEEEEEEEEEEP BEEEEEEEEEEEEEEEEEP BEEEEEEEEEEEEEEEP WE INTERRUPT THIS PROGRAM BECAUSE SOME X WAS SOLVED
 		MPI_Bcast(&bcastVal, 1, MPI_FLOAT, master, MPI_COMM_WORLD);
 		
+		//Iterate over the length of a row chunk
 		for(int j = 1; j <= rowSize; ++j){
 			if(myProcessID > master){
-				tmp[myProcessID*rowSize + j] -= b[j-1][i]*bcastVal;
+				int row = myProcessID*rowSize + (j-1);
+				tmp[row] -= b[j-1][i]*bcastVal;
 			}
-			//DEBUGGING PRINT
-			/*if(myProcessID == 2){
-				for(int j = 0; j < rowSize; ++j){
-					for(int k = 0; k < size; ++k){
-						printf("%0.2f, ", b[j][k]);
-						//printf("%0.2f, ", tmp[k]);
-					}
-				}
-				printf("End\n");
-			}*/
 		}
 	}
 	MPI_Gather(b[0],size*rowSize,MPI_FLOAT,lowerRow[0],size*rowSize,MPI_FLOAT,0,MPI_COMM_WORLD);
 	//Let's recv the solution matrix
 	if(myProcessID == 0){
+		if(size < 20) printf("Solution vector after forward sub\n");
 		for(int j = 0; j < rowSize; ++j){
 			vector[j] = solution[j];
-			//printf("%0.2f, ", vector[j]);
+			if(size < 20) printf("%0.2f\n", vector[j]);
 		}
 		for (int k = 1 ; k < numProcesses ; k++) 
 		{
@@ -486,7 +462,7 @@ void forwardSubstitution(float **lower, float *vector, int size, int numProcesse
 			MPI_Recv(tmp,rowSize,MPI_FLOAT,k,0,MPI_COMM_WORLD,&status);
 			for(int m = 0; m < rowSize; ++m){
 				vector[(k*rowSize)+m] = tmp[m];
-				//printf("%0.2f, ", vector[(k*rowSize)+m]);
+				if(size < 20) printf("%0.2f\n", vector[(k*rowSize)+m]);
 			}
 		}
 	}
@@ -528,24 +504,8 @@ void backwardSubstitution(float **upper, float *vector, int size, int numProcess
 				upperRow[i][j] = upper[j][i];
 			}
 		}
-		//DEBUGGING
-		/*for(int i = 0; i < size; ++i)
-			for(int j = 0; j < size; ++j)
-				printf("%0.2f, ", upperRow[i][j]);
-		//printf("%0.2f\n",lowerRow[0]);*/
 	}
-	
-	/*if(myProcessID == 1){
-			for(int j = 0; j < rowSize; ++j){
-				for(int k = 0; k < size; ++k){
-					printf("%0.2f, ", b[j][k]);
-				}
-			}
-			printf("End\n");
-		}*/
 	MPI_Bcast(tmp,size,MPI_FLOAT,0,MPI_COMM_WORLD);
-	//printf("Size*rowSize: %d\n", size*rowSize);
-	//printf("%0.2f\n", b[0]);
 	MPI_Scatter(upperRow[0],size*rowSize,MPI_FLOAT,b[0],size*rowSize,MPI_FLOAT,0,MPI_COMM_WORLD);
 	for(int i = size-1; i >= 0; --i){
 		//Iterate over the length of a row chunk
@@ -553,36 +513,46 @@ void backwardSubstitution(float **upper, float *vector, int size, int numProcess
 		//Solve one step of each row in a parallel fashion 'snap' before iterating over to the index
 		if(myProcessID == master){
 			//This row is solvable, solve it, broadcast it
-			bcastVal = (tmp[i]/b[i%rowSize][i]);
-			//printf("I am looking at this: %0.2f", b[0][i]);
+			bcastVal = (b[i%rowSize][i]/tmp[i]);
 			solution[i] = bcastVal;
-			printf("y%d: %0.2f\n", i, bcastVal);
 			for(int j = 1; j < rowSize; ++j){
-				tmp[j] -= b[j][i]*bcastVal;
+				int row = myProcessID*rowSize + (j);
+				tmp[row] -= b[j][i]*bcastVal;
 			}
 		}
 		
-		//BEEEEEEEEEEEEEEEEP BEEEEEEEEEEEEEEEEEP BEEEEEEEEEEEEEEEP WE INTERUPT THIS PROGRAM BECAUSE SOME X WAS SOLVED
+		//BEEEEEEEEEEEEEEEEP BEEEEEEEEEEEEEEEEEP BEEEEEEEEEEEEEEEP WE INTERRUPT THIS PROGRAM BECAUSE SOME X WAS SOLVED
 		MPI_Bcast(&bcastVal, 1, MPI_FLOAT, master, MPI_COMM_WORLD);
 		
 		for(int j = 1; j <= rowSize; ++j){
 			if(myProcessID < master){
-				//printf("b[0][i] is: %0.2f\n", b[0][i]);
-				tmp[myProcessID*rowSize + j] -= b[j-1][i]*bcastVal;
+				int row = myProcessID*rowSize + (j-1);
+				tmp[row] -= b[j-1][i]*bcastVal;
 			}
 		}
-		//DEBUGGING PRINT
-		/*if(myProcessID == 1){
-			for(int j = 0; j < rowSize; ++j){
-				for(int k = 0; k < size; ++k){
-					printf("%0.2f, ", b[j][k]);
-					//printf("%0.2f, ", tmp[k]);
-				}
-			}
-			printf("End\n");
-		}*/
 	}
 	MPI_Gather(b[0],size*rowSize,MPI_FLOAT,upperRow[0],size*rowSize,MPI_FLOAT,0,MPI_COMM_WORLD);
+	//Let's recv the solution matrix
+	if(myProcessID == 0){
+		if (size < 20) printf("Solution vector after backward sub\n");
+		for(int j = 0; j < rowSize; ++j){
+			vector[j] = solution[j];
+			if(size < 20) printf("%0.2f\n", vector[j]);
+		}
+		for (int k = 1 ; k < numProcesses ; k++) 
+		{
+			//receive data from worker process
+			MPI_Recv(tmp,rowSize,MPI_FLOAT,k,0,MPI_COMM_WORLD,&status);
+			for(int m = 0; m < rowSize; ++m){
+				vector[(k*rowSize)+m] = tmp[m];
+				if (size < 20) printf("%0.2f\n", vector[(k*rowSize)+m]);
+			}
+		}
+	}
+	else{
+		MPI_Send(&solution[myProcessID*rowSize],rowSize,MPI_FLOAT,0,0,MPI_COMM_WORLD);
+	}
+	
 }
 
 //------------------------------------------------------------------
@@ -590,13 +560,12 @@ void backwardSubstitution(float **upper, float *vector, int size, int numProcess
 //------------------------------------------------------------------
 int main(int argc, char *argv[]){
 	srand(time(NULL));	//set the seed
-	
+	//srand(0);
 	//Matrices
 	float **a;
 	float **lower;
 	float **upper;
 	float *vector;
-	//float **lowerRow;
 	
 	int	n,isPrintMatrix,numProcesses,myProcessID;
 	double runtime;
@@ -631,29 +600,13 @@ int main(int argc, char *argv[]){
 	
 	//Compute the LU Decomposition
 	LUDecomp(a, lower, upper, n, numProcesses, myProcessID);
-
-	
-	//if (myProcessID == 0){
-		//ColumnMajorToRowMajor(lower, lowerRow, n);
-		//MPI_Bcast(lowerRow, n*n, MPI_FLOAT, 0, MPI_COMM_WORLD);
-		// printf("\nLower:\n");
-		// PrintMatrix(lower,n);
-		// printf("\nLowerRow:\n");
-		// PrintMatrix(lowerRow,n);
-	//}
-	if(myProcessID == 0){
-		printf("Forward Substitution:\n");
-	}
 	
 	forwardSubstitution(lower, vector, n, numProcesses, myProcessID);
 	
-	if(myProcessID == 0){
-		printf("\nBackward Substitution\n");
-	}
 	//Vector has been updated from forwardSub, so it's using the solved solution vector for backward sub
+	
 	backwardSubstitution(a, vector, n, numProcesses, myProcessID);
 	
-	//cout << "Hyyiiaaa?" << endl;
 	//Master process gets end time and print results
 	if (myProcessID == 0)
 	{
@@ -665,7 +618,8 @@ int main(int argc, char *argv[]){
 			printf("\nUpper:\n");
 			PrintMatrix(a,n);
 		}
-		printf("Runtime: %0.2f", runtime);
+		printf("Runtime: %0.2f\n", runtime);
+		printf("Woweee look at that. We made it to the end successfully and DIDN'T seg fault. And look at that runtime! Impressive if you ask me :)(hopefully, I have no idea)\n");
 
 		//All process delete matrix, ahhaa, yeah, maybe when I get that to work one day
 		DeleteMatrix(a,n);
