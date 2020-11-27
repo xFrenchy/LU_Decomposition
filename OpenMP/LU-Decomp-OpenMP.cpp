@@ -307,7 +307,7 @@ int main(int argc, char *argv[])
     
     omp_set_num_threads(numThreads);
 
-    cout << "Starting OpenMP LU decomposition" << endl;
+    cout << "Starting OpenMP LU decomposition with forward/back substitution" << endl;
     cout << "matrix size = " << n << "x " << n << endl;
     
     //Initialize the value of matrix a, l
