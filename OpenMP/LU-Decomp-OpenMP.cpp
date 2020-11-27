@@ -350,10 +350,10 @@ int main(int argc, char *argv[])
         cout<< "U matrix:" << endl;
         PrintMatrix(a,n);
         
-        cout<< "y vector:" << endl;
+        cout<< "y vector from forward substitution:" << endl;
         PrintVector(y, n);
         
-        cout<< "x vector:" << endl;
+        cout<< "x vector from back substitution:" << endl;
         PrintVector(x, n);
     }
     cout<< "Program runs in " << setiosflags(ios::fixed) << setprecision(8) << runtime << " seconds\n";
