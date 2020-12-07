@@ -78,7 +78,7 @@ int main(int argc, char *argv[]){
 		ForwardSubstitution<<<dimGrid, dimBlock>>>(d_lower, d_y, d_b, n);
 		BackwardSubstitution<<<dimGrid, dimBlock>>>(d_upper, d_x, d_y, n);
 		
-		cudaDeviceSynchronize();
+		cudaThreadSynchronize();
 	// ######################### END Substitution ##############################3
 
 
