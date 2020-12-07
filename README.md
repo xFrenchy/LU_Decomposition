@@ -14,7 +14,7 @@
 
 > mpirun -print-rank-map -n (number of processes) -ppn (tasks per node) ./mpi (size of matrix) (print yes = 1, print no = 0)
 
-> sbatch lu_slurm.sh (size of matrix) (print yes = 1, print no = 0)
+> sbatch lu_mpi_slurm.sh (size of matrix) (print yes = 1, print no = 0)
 
 The matrix size must be a multiple of the number of processes such as mpirun -print-rank-map -n 4 -ppn 2 ./mpi 8 1
 
